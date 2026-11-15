@@ -122,6 +122,48 @@
           </div>
         </section>
 
+        <section class="panel glass explain-panel" id="explain">
+          <div class="panel-head explain-head">
+            <div>
+              <span>Why did it decide that?</span>
+              <p class="chart-subtitle">Inspect a deterministic episode, risk factors, and the counterfactual chain.</p>
+            </div>
+            <span class="panel-tag">Decision evidence</span>
+          </div>
+          <div class="explain-controls">
+            <label for="explainScenario">Scenario</label>
+            <select id="explainScenario">
+              <option value="C1_relay2">Attack: two-agent PII relay</option>
+              <option value="C2_secret_escalation">Attack: secret escalation</option>
+              <option value="C3_chain_encoded">Attack: encoded multi-agent relay</option>
+              <option value="C4_memory_deadrop">Attack: shared-memory dead drop</option>
+              <option value="B3_internal_raw_pii">Benign: raw PII shared internally</option>
+              <option value="C5_lineage_break">Stress test: retyped data loses lineage</option>
+            </select>
+            <button class="primary-btn" id="explainBtn" type="button">Run explanation</button>
+            <span id="explainStatus" class="explain-status" role="status">Ready</span>
+          </div>
+          <div id="explainSummary" class="explain-summary" aria-live="polite">
+            Choose a scenario and run it to inspect the guard's decision.
+          </div>
+          <div class="explain-grid">
+            <div class="explain-events">
+              <h3>Event trace</h3>
+              <div id="explainEvents" class="explain-event-list">
+                <p class="chart-empty">Run an explanation to load events.</p>
+              </div>
+            </div>
+            <div id="riskDetails" class="risk-details">
+              <h3>Risk breakdown</h3>
+              <p class="chart-empty">Select an event to see why it was allowed, flagged, blocked, or suspended.</p>
+            </div>
+          </div>
+          <div id="counterfactualPanel" class="counterfactual-panel">
+            <h3>Counterfactual explanation</h3>
+            <p class="chart-empty">High-risk events include the agent chain whose removal makes the recorded violation disappear.</p>
+          </div>
+        </section>
+
         <section class="panel glass log-panel">
           <div class="panel-head">
             <span>Execution log</span>

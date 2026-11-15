@@ -16,7 +16,14 @@ const els = {
   refreshBtn: document.getElementById('refreshBtn'),
   runEvalBtn: document.getElementById('runEvalBtn'),
   runDemoBtn: document.getElementById('runDemoBtn'),
-  viewResultsBtn: document.getElementById('viewResultsBtn')
+  viewResultsBtn: document.getElementById('viewResultsBtn'),
+  explainScenario: document.getElementById('explainScenario'),
+  explainBtn: document.getElementById('explainBtn'),
+  explainStatus: document.getElementById('explainStatus'),
+  explainSummary: document.getElementById('explainSummary'),
+  explainEvents: document.getElementById('explainEvents'),
+  riskDetails: document.getElementById('riskDetails'),
+  counterfactualPanel: document.getElementById('counterfactualPanel')
 };
 
 const actionButtons = [els.refreshBtn, els.runEvalBtn, els.runDemoBtn, els.viewResultsBtn];
@@ -201,6 +208,156 @@ function setBusy(isBusy) {
 
 const delay = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+function agentName(agent) {
+  return ({
+    P: 'Planner', R: 'Researcher', A: 'Analyst', W: 'Writer', N: 'Notifier',
+    MEM: 'Shared memory', EXTERNAL: 'External'
+  })[agent] || agent || '—';
+}
+
+function eventTarget(event) {
+  return event.sink !== 'none' ? event.sink : event.dst;
+}
+
+function formatFactorValue(value, digits = 2) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '0.00';
+}
+
+function renderExplainSummary(data) {
+  const outcome = data.leaked
+    ? '<span class="outcome-badge danger">Sensitive data leaked</span>'
+    : data.suspended
+      ? '<span class="outcome-badge warning">Workflow suspended</span>'
+      : '<span class="outcome-badge success">No sensitive data leaked</span>';
+  els.explainSummary.innerHTML = `
+    <div><strong>${escapeHtml(data.scenario_label)}</strong><span>Seed ${data.seed} · scripted simulation</span></div>
+    ${outcome}
+  `;
+}
+
+function renderExplainEvents(data, selectedId) {
+  els.explainEvents.innerHTML = data.events.map((event) => {
+    const selected = event.eid === selectedId ? ' selected' : '';
+    const labels = event.labels.length ? event.labels.join(', ') : 'unlabelled';
+    const decision = event.decision === 'allow' ? 'allow' : event.decision;
+    return `
+      <button type="button" class="explain-event${selected}" data-event-id="${event.eid}" aria-pressed="${event.eid === selectedId}">
+        <span class="event-topline"><strong>#${event.eid} ${escapeHtml(event.step)}</strong><span class="event-risk ${escapeHtml(event.tier.toLowerCase())}">${escapeHtml(event.tier)} · ${formatFactorValue(event.risk, 1)}</span></span>
+        <span class="event-route">${escapeHtml(agentName(event.src))} → ${escapeHtml(agentName(eventTarget(event)))}</span>
+        <span class="event-footline"><span>${escapeHtml(labels)}</span><span class="decision-label ${escapeHtml(decision)}">${escapeHtml(decision)}</span></span>
+      </button>
+    `;
+  }).join('');
+}
+
+function renderRiskDetails(event) {
+  if (!event) {
+    els.riskDetails.innerHTML = '<h3>Risk breakdown</h3><p class="chart-empty">No event selected.</p>';
+    return;
+  }
+  const factors = event.risk_factors || {};
+  const parts = event.risk_parts || {};
+  const sensitivity = factors.sensitivity || {};
+  const destination = factors.destination || {};
+  const permission = factors.permission_gap || {};
+  const relay = factors.relay_length || {};
+  const novelty = factors.novelty || {};
+  const trust = factors.trust || {};
+  const labels = sensitivity.labels && sensitivity.labels.length ? sensitivity.labels.join(', ') : 'No sensitivity label';
+  const path = (relay.path || []).map(agentName).join(' → ') || 'No agent relay';
+  const rows = [
+    { name: 'Sensitivity', detail: `${labels} · severity ${formatFactorValue(sensitivity.severity)}`, value: '' },
+    { name: 'Destination', detail: `${destination.sink || event.sink} sink · weight ${formatFactorValue(destination.weight)}`, value: `+${formatFactorValue(factors.sensitive_destination_contribution)}` },
+    { name: 'Permission gap', detail: permission.missing && permission.missing.length ? `${agentName(permission.agent)} lacks ${permission.missing.join(', ')}` : 'No missing sensitivity permission', value: `+${formatFactorValue(permission.contribution)}` },
+    { name: 'Relay length', detail: `${relay.agents || 0} agents · ${path}`, value: `+${formatFactorValue(relay.contribution)}` },
+    { name: 'Novelty', detail: `Baseline novelty ${formatFactorValue(novelty.score)}`, value: `+${formatFactorValue(novelty.contribution)}` },
+    { name: 'Trust', detail: `Minimum agent trust ${formatFactorValue(trust.minimum)}`, value: `+${formatFactorValue(trust.contribution)}` }
+  ];
+  els.riskDetails.innerHTML = `
+    <h3>Risk breakdown</h3>
+    <div class="risk-total"><span>Final score</span><strong>${formatFactorValue(event.risk, 1)} / 100 · ${escapeHtml(event.tier)}</strong></div>
+    <p class="risk-formula">Sensitive-destination risk is the combined sensitivity × destination contribution; other values are additive score contributions. The total is capped at 100.</p>
+    <div class="factor-list">${rows.map((row) => `
+      <div class="factor-row">
+        <span class="factor-marker ${row.value && Number(row.value.slice(1)) > 0 ? 'raised' : ''}"></span>
+        <div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.detail)}</span></div>
+        <b>${escapeHtml(row.value)}</b>
+      </div>
+    `).join('')}</div>
+    <div class="decision-reason"><strong>Decision: ${escapeHtml(event.decision)}</strong><span>${escapeHtml(event.reason || 'No additional rule explanation.')}</span></div>
+  `;
+}
+
+function renderCounterfactual(data, event) {
+  const explanation = data.explanations.find((item) => item.eid === event.eid);
+  if (!explanation) {
+    els.counterfactualPanel.innerHTML = `
+      <h3>Counterfactual explanation</h3>
+      <p class="chart-empty">${event.risk < 50
+        ? 'No counterfactual is generated below the High-risk threshold. This action was handled using its risk tier.'
+        : 'No counterfactual chain was recorded for this action.'}</p>
+    `;
+    return;
+  }
+  els.counterfactualPanel.innerHTML = `
+    <h3>Counterfactual explanation · event #${explanation.eid}</h3>
+    <p class="counterfactual-text">${escapeHtml(explanation.text)}</p>
+    <p class="culprit-list"><strong>Likely necessary agents:</strong> ${explanation.culprits.map((agent) => escapeHtml(agentName(agent))).join(', ') || 'None identified'}</p>
+    <ol class="causal-chain">${explanation.chain.map((step) => `
+      <li><span>#${step.eid} · ${escapeHtml(step.step)}</span><strong>${escapeHtml(agentName(step.src))} → ${escapeHtml(agentName(step.sink !== 'none' ? (step.sink === 'external' ? 'EXTERNAL' : step.sink) : step.dst))}</strong></li>
+    `).join('')}</ol>
+  `;
+}
+
+function selectExplainEvent(eventId) {
+  const data = state.explanation;
+  if (!data) return;
+  const event = data.events.find((item) => item.eid === eventId);
+  if (!event) return;
+  state.selectedExplainEvent = eventId;
+  renderExplainEvents(data, eventId);
+  renderRiskDetails(event);
+  renderCounterfactual(data, event);
+}
+
+async function loadExplanation() {
+  els.explainBtn.disabled = true;
+  els.explainStatus.textContent = 'Running scenario…';
+  els.explainSummary.textContent = 'Executing the scripted scenario and collecting risk evidence…';
+  try {
+    const response = await fetch('/api/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario: els.explainScenario.value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Explanation request failed (${response.status}).`);
+    state.explanation = data;
+    renderExplainSummary(data);
+    const preferred = [...data.explanations].reverse().find((item) =>
+      data.events.some((event) => event.eid === item.eid)
+    );
+    const selected = preferred ? preferred.eid : data.events[data.events.length - 1]?.eid;
+    if (selected !== undefined) selectExplainEvent(selected);
+    els.explainStatus.textContent = 'Complete';
+  } catch (error) {
+    state.explanation = null;
+    els.explainStatus.textContent = 'Failed';
+    els.explainSummary.textContent = `Could not load explanation: ${error.message}`;
+    els.explainEvents.innerHTML = '<p class="chart-empty">The event trace could not be loaded.</p>';
+    els.riskDetails.innerHTML = '<h3>Risk breakdown</h3><p class="chart-empty">No decision evidence available.</p>';
+    els.counterfactualPanel.innerHTML = '<h3>Counterfactual explanation</h3><p class="chart-empty">No counterfactual evidence available.</p>';
+  } finally {
+    els.explainBtn.disabled = false;
+  }
+}
+
 async function runAction(command) {
   if (state.activeJob) return;
   setBusy(true);
@@ -242,5 +399,11 @@ els.viewResultsBtn.addEventListener('click', () => {
   loadResults();
   document.getElementById('defenses').scrollIntoView({ behavior: 'smooth', block: 'center' });
 });
+els.explainBtn.addEventListener('click', loadExplanation);
+els.explainEvents.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-event-id]');
+  if (button) selectExplainEvent(Number(button.dataset.eventId));
+});
 
 loadResults();
+loadExplanation();
