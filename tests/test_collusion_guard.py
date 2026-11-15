@@ -167,3 +167,12 @@ def test_varied_episode_keeps_ground_truth_scenario_label():
     tb = Testbed(NoDefense(), rng).run(steps)
     assert tb.leaked
     assert GROUND_TRUTH["C4_memory_deadrop"] == {"A", "N"}
+
+
+def test_sweep_spread_and_confusion():
+    from collusion_guard.sweep import run_sweep
+    res = run_sweep(seeds=(1, 2, 3), n_per=2, levels=(0.0, 1.0), defenses=("CollusionGuard (ours)",))
+    v = res["CollusionGuard (ours)"]["1.0"]
+    assert v["f1"]["n"] == 3 and v["f1"]["ci95"] >= 0
+    c = v["confusion"]
+    assert c["TP"] + c["FN"] == 3 * 2 * 5 and c["FP"] + c["TN"] == 3 * 2 * 4

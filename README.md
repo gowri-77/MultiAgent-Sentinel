@@ -19,3 +19,8 @@ high-risk events. It includes a benign internal-PII flow and a lineage-loss stre
 the current behavior and limitations visible.
 
 Layout: collusion_guard/{model,testbed,graph,counterfactual,guard,evaluate}.py
+
+## Difficulty sweep (noise vs. detection)
+`python -m collusion_guard.sweep` sweeps a noise level (0-1: randomised wording, benign relays, extra hops, partial re-typing),
+reports mean ± SD and 95% CI across seeds, pooled confusion matrices, and writes `results_sweep.json`,
+`figs/noise_sweep.png` (F1 / benign completion vs. noise) and `figs/confusion_matrices.png`.
