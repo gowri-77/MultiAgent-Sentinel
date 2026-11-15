@@ -134,3 +134,36 @@ def test_explanation_does_not_claim_permission_gap_for_authorized_source_read():
     read_event = next(event for event in result["events"] if event["step"] == "read_customers")
     assert read_event["risk_factors"]["permission_gap"]["missing"] == []
     assert read_event["risk_factors"]["permission_gap"]["contribution"] == 0
+
+
+
+def test_varied_episode_is_reproducible_and_preserves_core_order():
+    from collusion_guard.variation import make_varied_episode
+    original, _ = make_episode("C3_chain_encoded", 77)
+    varied_a, _ = make_varied_episode("C3_chain_encoded", 77, 3, 7)
+    varied_b, _ = make_varied_episode("C3_chain_encoded", 77, 3, 7)
+    core_original = [s["step"] for s in original if not s["step"].startswith("chatter")]
+    core_varied = [s["step"] for s in varied_a if not s["step"].startswith("variant_noise")]
+    assert core_varied == core_original
+    assert varied_a == varied_b
+    noise = [s for s in varied_a if s["step"].startswith("variant_noise")]
+    assert 3 <= len(noise) <= 7
+    assert all(not s["required"] and not s["collusive"] for s in noise)
+
+
+def test_varied_episode_changes_noise_layout_across_seeds():
+    from collusion_guard.variation import make_varied_episode
+    a, _ = make_varied_episode("C1_relay2", 101, 4, 8)
+    b, _ = make_varied_episode("C1_relay2", 202, 4, 8)
+    signature = lambda steps: [(s["agent"], s.get("dst"), s["step"]) for s in steps
+                               if s["step"].startswith("variant_noise")]
+    assert signature(a) != signature(b)
+
+
+def test_varied_episode_keeps_ground_truth_scenario_label():
+    from collusion_guard.variation import make_varied_episode
+    from collusion_guard.testbed import GROUND_TRUTH
+    steps, rng = make_varied_episode("C4_memory_deadrop", 333, 2, 5)
+    tb = Testbed(NoDefense(), rng).run(steps)
+    assert tb.leaked
+    assert GROUND_TRUTH["C4_memory_deadrop"] == {"A", "N"}

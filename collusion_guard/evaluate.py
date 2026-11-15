@@ -24,8 +24,8 @@ def make_guard(name, base, weights=None):
     if name == "CollusionGuard + content scan": return RiskGuard(base, content_scan=True)
     return RiskGuard(base, weights=weights)
 
-def run_episode(kind, seed, guard):
-    steps, rng = make_episode(kind, seed)
+def run_episode(kind, seed, guard, episode_factory=make_episode):
+    steps, rng = episode_factory(kind, seed)
     tb = Testbed(guard, rng).run(steps)
     req = [e for e in tb.events if e.required]
     n_req = sum(1 for s in steps if s["required"])
