@@ -108,3 +108,29 @@ def test_TC20_decision_latency_per_event_is_small():
         g.decide = timed; tb.run(steps)
     lat.sort(); med = lat[len(lat)//2]; p95 = lat[int(len(lat)*0.95)]
     assert med < 0.005 and p95 < 0.05
+
+def test_explanation_endpoint_data_includes_risk_factors_and_counterfactual_chain():
+    from ui_server import build_explanation
+
+    result = build_explanation("C1_relay2")
+    blocked = next(event for event in result["events"] if event["decision"] == "block")
+    assert blocked["risk_factors"]["sensitivity"]["labels"] == ["PII"]
+    assert blocked["risk_factors"]["destination"]["sink"] == "external"
+    assert blocked["risk_parts"]["sink"] == blocked["risk_factors"]["sensitive_destination_contribution"]
+    explanation = next(item for item in result["explanations"] if item["eid"] == blocked["eid"])
+    assert set(explanation["culprits"]) == GROUND_TRUTH["C1_relay2"]
+    assert explanation["chain"]
+
+def test_explanation_endpoint_rejects_unknown_scenarios():
+    from ui_server import build_explanation
+
+    with pytest.raises(ValueError, match="Unknown explanation scenario"):
+        build_explanation("unknown")
+
+def test_explanation_does_not_claim_permission_gap_for_authorized_source_read():
+    from ui_server import build_explanation
+
+    result = build_explanation("B3_internal_raw_pii")
+    read_event = next(event for event in result["events"] if event["step"] == "read_customers")
+    assert read_event["risk_factors"]["permission_gap"]["missing"] == []
+    assert read_event["risk_factors"]["permission_gap"]["contribution"] == 0

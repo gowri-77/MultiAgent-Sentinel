@@ -84,7 +84,27 @@ class RiskGuard(Guard):
         tmin = min(self.trust.get(ev.src, 1.0), self.trust.get(ev.dst, 1.0) if ev.dst in PERMS else 1.0)
         parts = dict(sink=self.W_SINK * s * k, novelty=self.W_NOV * n, perm_gap=self.W_PERM * p,
                      hops=self.W_HOP * hopf, trust=(self.W_TRUST * (1 - tmin)) if sens else 0.0)
-        return min(100.0, sum(parts.values())), parts
+        risk = min(100.0, sum(parts.values()))
+        ev.risk_parts = parts
+        ev.risk_factors = {
+            "sensitivity": {"labels": sorted(sens), "severity": s},
+            "destination": {"sink": ev.sink, "weight": k},
+            "permission_gap": {
+                "agent": recv,
+                "missing": sorted(f"read:{label}" for label in sens
+                                  if p and f"read:{label}" not in PERMS.get(recv, set())),
+                "contribution": parts["perm_gap"],
+            },
+            "relay_length": {
+                "agents": handlers,
+                "path": [a for a in ev.path if a in PERMS],
+                "contribution": parts["hops"],
+            },
+            "novelty": {"score": n, "contribution": parts["novelty"]},
+            "trust": {"minimum": tmin, "contribution": parts["trust"]},
+            "sensitive_destination_contribution": parts["sink"],
+        }
+        return risk, parts
 
     def _scan(self, ev, tb):
         """Content-based taint recovery for data whose provenance was lost (hybrid mode)."""
@@ -117,7 +137,8 @@ class RiskGuard(Guard):
         # High / Critical: understand (counterfactual) before acting
         res = cf.analyse(tb.events + [ev], ev)
         ev_text = res["text"]
-        self.explanations.append(dict(eid=ev.eid, step=ev.step, risk=risk, tier=tier, culprits=res["culprits"], text=ev_text, parts=parts))
+        self.explanations.append(dict(eid=ev.eid, step=ev.step, risk=risk, tier=tier,
+                                      culprits=res["culprits"], text=ev_text, chain=res["chain"], parts=parts))
         drop = 0.3 if tier == "High" else 1.0
         for a in (ev.src, ev.dst):
             if a in self.trust: self.trust[a] = max(0.0, self.trust[a] - drop)
