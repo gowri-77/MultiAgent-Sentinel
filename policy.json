@@ -1,0 +1,170 @@
+{
+ "sanitizers": [
+  "aggregate",
+  "project_email",
+  "project_name"
+ ],
+ "toxic_combinations": [
+  [
+   "QID_EMAIL",
+   "QID_NAME"
+  ]
+ ],
+ "rules": [
+  {
+   "id": "P1-no-inband-secrets",
+   "effect": "deny",
+   "why": "secrets are injected by the vault, never passed in messages or memory",
+   "labels": [
+    "SECRET"
+   ],
+   "etypes": [
+    "msg",
+    "mem_write",
+    "mem_read"
+   ]
+  },
+  {
+   "id": "P2-no-external-egress",
+   "effect": "deny",
+   "why": "classified data may not leave the organisation",
+   "sinks": [
+    "external"
+   ]
+  },
+  {
+   "id": "P3-no-classified-in-shared-memory",
+   "effect": "deny",
+   "why": "shared memory is not an approved store for classified data",
+   "etypes": [
+    "mem_write",
+    "mem_read"
+   ]
+  },
+  {
+   "id": "A1-pii-read-by-data-agent",
+   "effect": "allow",
+   "why": "data agent may read customer PII for analytics or CRM work",
+   "labels": [
+    "PII"
+   ],
+   "etypes": [
+    "tool"
+   ],
+   "tools": [
+    "db_read"
+   ],
+   "src": [
+    "A"
+   ],
+   "purposes": [
+    "analytics_report",
+    "crm_update"
+   ]
+  },
+  {
+   "id": "A2-vendor-secret-read",
+   "effect": "allow",
+   "why": "data agent may read the vendor key for an integration task",
+   "labels": [
+    "SECRET"
+   ],
+   "etypes": [
+    "tool"
+   ],
+   "tools": [
+    "read_secret"
+   ],
+   "src": [
+    "A"
+   ],
+   "purposes": [
+    "vendor_integration"
+   ]
+  },
+  {
+   "id": "A3-approved-aggregation",
+   "effect": "allow",
+   "why": "aggregation is the approved de-identification step for reports",
+   "labels": [
+    "PII"
+   ],
+   "etypes": [
+    "tool"
+   ],
+   "tools": [
+    "aggregate"
+   ],
+   "src": [
+    "A"
+   ],
+   "purposes": [
+    "analytics_report"
+   ]
+  },
+  {
+   "id": "A6-field-projection",
+   "effect": "allow",
+   "why": "single-column extracts are routine analytics queries",
+   "labels": [
+    "PII"
+   ],
+   "etypes": [
+    "tool"
+   ],
+   "tools": [
+    "project_name",
+    "project_email"
+   ],
+   "src": [
+    "A"
+   ],
+   "purposes": [
+    "analytics_report"
+   ]
+  },
+  {
+   "id": "A4-crm-handoff",
+   "effect": "allow",
+   "why": "raw customer records go from the data agent to the writer for CRM updates only",
+   "labels": [
+    "PII"
+   ],
+   "etypes": [
+    "msg"
+   ],
+   "src": [
+    "A"
+   ],
+   "dst": [
+    "W"
+   ],
+   "purposes": [
+    "crm_update"
+   ]
+  },
+  {
+   "id": "A5-crm-write",
+   "effect": "allow",
+   "why": "writer may store customer records in the internal CRM document",
+   "labels": [
+    "PII"
+   ],
+   "etypes": [
+    "tool"
+   ],
+   "tools": [
+    "write_doc"
+   ],
+   "src": [
+    "W"
+   ],
+   "sinks": [
+    "internal"
+   ],
+   "purposes": [
+    "crm_update"
+   ]
+  }
+ ]
+}

@@ -167,3 +167,88 @@ def test_varied_episode_keeps_ground_truth_scenario_label():
     tb = Testbed(NoDefense(), rng).run(steps)
     assert tb.leaked
     assert GROUND_TRUTH["C4_memory_deadrop"] == {"A", "N"}
+
+
+def test_sweep_spread_and_confusion():
+    from collusion_guard.sweep import run_sweep
+    res = run_sweep(seeds=(1, 2, 3), n_per=2, levels=(0.0, 1.0), defenses=("CollusionGuard (ours)",))
+    v = res["CollusionGuard (ours)"]["1.0"]
+    assert v["f1"]["n"] == 3 and v["f1"]["ci95"] >= 0
+    c = v["confusion"]
+    assert c["TP"] + c["FN"] == 3 * 2 * 5 and c["FP"] + c["TN"] == 3 * 2 * 4
+
+
+# ---------------------------------------------------------------- permitted-flow policy
+from collusion_guard.policy import DEFAULT_POLICY, Policy
+from collusion_guard.scenarios2 import make_episode2, BENIGN2, ATTACKS2
+
+def run2(kind, guard, seed=5):
+    steps, rng = make_episode2(kind, seed); tb = Testbed(guard, rng).run(steps); return tb, guard
+def pol(**k): return RiskGuard(BASE, policy=DEFAULT_POLICY, **k)
+
+def test_policy_permits_crm_flow_without_flag():
+    tb, g = run2("B5_crm_sync", pol())
+    assert all(e.tier == "Low" for e in tb.events if not e.step.startswith("chatter")) and not tb.leaked
+
+def test_policy_denies_same_pii_flow_under_wrong_purpose():
+    tb, _ = run2("C1_relay2", pol()); assert not tb.leaked
+    assert any(e.decision in ("block", "suspend") and "policy" in e.reason for e in tb.events)
+
+def test_policy_blocks_onward_hop_after_permitted_flow():
+    tb, _ = run2("C6_purpose_abuse", pol()); assert not tb.leaked
+    assert next(e for e in tb.events if e.step == "send_records").decision == "allow"
+    assert next(e for e in tb.events if e.step == "forward_records").decision in ("block", "suspend")
+
+def test_paraphrase_evades_dlp_and_plain_guard_but_not_policy():
+    assert run2("C7_paraphrase_exfil", SignatureDLP())[0].leaked
+    assert run2("C7_paraphrase_exfil", ours())[0].leaked
+    assert not run2("C7_paraphrase_exfil", pol())[0].leaked
+
+def test_context_leak_caught_by_taint_not_by_labels():
+    assert run2("C8_context_leak", ours())[0].leaked
+    assert not run2("C8_context_leak", pol())[0].leaked
+
+def test_public_email_is_false_positive_for_content_scan_only():
+    assert not run2("B6_public_contact", pol())[0].events[0].decision == "block"
+    assert all(e.decision != "block" for e in run2("B6_public_contact", pol())[0].events)
+    assert any(e.decision == "block" for e in run2("B6_public_contact", pol(content_scan=True))[0].events)
+
+def test_policy_roundtrips_as_json_and_default_denies_classified():
+    p = Policy.from_dict(DEFAULT_POLICY.to_dict()); assert len(p.rules) == len(DEFAULT_POLICY.rules)
+    tb, _ = run2("C1_relay2", NoDefense()); ev = next(e for e in tb.events if e.step == "relay_raw")
+    assert p.evaluate(ev).rule == "DEFAULT-DENY"
+
+
+def test_fragment_split_is_invisible_to_stateless_policy_but_caught_by_composition():
+    assert run2("C9_fragment_split", NoDefense())[0].leaked
+    assert run2("C9_fragment_split", PolicyOnly(DEFAULT_POLICY))[0].leaked      # every flow is individually permitted
+    assert run2("C9_fragment_split", ours())[0].leaked
+    tb, g = run2("C9_fragment_split", pol()); assert not tb.leaked
+    assert any(r == "TOXIC-COMBINATION" for *_, r in g.policy_log)
+
+def test_single_field_export_is_not_flagged():
+    tb, g = run2("B7_single_field_export", pol())
+    assert all(e.decision == "allow" for e in tb.events if not e.step.startswith("chatter"))
+
+
+# ---------------------------------------------------------------- non-exfiltration collusion
+from collusion_guard.scenarios2 import learn_baseline2
+BASE2 = learn_baseline2(11)
+def full(): return RiskGuard(BASE2, policy=DEFAULT_POLICY, coordination=True)
+
+def test_delegation_laundering_blocked_but_legit_delegation_allowed():
+    assert run2("C10_delegation_laundering", ours())[0].leaked
+    assert not run2("C10_delegation_laundering", full())[0].leaked
+    tb, _ = run2("B8_authorized_payment", full()); assert all(e.decision == "allow" for e in tb.events if not e.step.startswith("chatter"))
+
+def test_rubber_stamp_blocked_proper_review_allowed():
+    assert not run2("C11_rubber_stamp", full())[0].leaked
+    tb, _ = run2("B9_proper_review", full()); assert all(e.decision == "allow" for e in tb.events if not e.step.startswith("chatter"))
+
+def test_pressured_review_is_detected_but_not_prevented():
+    tb, _ = run2("C11b_pressured_review", full())
+    assert tb.leaked and any(e.collusive and e.tier != "Low" for e in tb.events)
+
+def test_price_signalling_needs_the_statistical_detector():
+    assert run2("C12_price_signalling", PolicyOnly(DEFAULT_POLICY))[0].leaked
+    assert not run2("C12_price_signalling", full())[0].leaked

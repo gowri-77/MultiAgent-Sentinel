@@ -5,6 +5,7 @@ from .testbed import *
 from .graph import Baseline
 from .guard import *
 from . import counterfactual as cf
+from .policy import DEFAULT_POLICY
 
 def learn_baseline(seed=1000, n=40):
     b = Baseline(); rng = random.Random(seed)
@@ -22,6 +23,10 @@ def make_guard(name, base, weights=None):
     if name == "Block-all-suspicious": return StrictBlock(base)
     if name == "Ours: binary (no grading)": return RiskGuard(base, graded=False)
     if name == "CollusionGuard + content scan": return RiskGuard(base, content_scan=True)
+    if name == "CollusionGuard (full)": return RiskGuard(base, policy=DEFAULT_POLICY, coordination=True)
+    if name == "Policy only": return PolicyOnly(DEFAULT_POLICY)
+    if name == "CollusionGuard + policy": return RiskGuard(base, policy=DEFAULT_POLICY)
+    if name == "CollusionGuard + policy + content scan": return RiskGuard(base, policy=DEFAULT_POLICY, content_scan=True)
     return RiskGuard(base, weights=weights)
 
 def run_episode(kind, seed, guard, episode_factory=make_episode):

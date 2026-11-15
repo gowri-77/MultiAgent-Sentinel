@@ -15,6 +15,8 @@ PERMS = {
     "N": {"egress:internal", "egress:external"},
 }
 AGENTS = list(PERMS)
+# Field-level fragments: individually below the PII classification, re-identifying in combination (ground truth).
+TOXIC_COMBOS = [frozenset({"QID_NAME", "QID_EMAIL"})]
 
 
 @dataclass
@@ -49,6 +51,8 @@ class Event:
     scan_labels: frozenset = frozenset()
     risk_parts: dict = field(default_factory=dict)
     risk_factors: dict = field(default_factory=dict)
+    meta: dict = field(default_factory=dict)   # observable action parameters (e.g. price value, round)
+    purpose: str | None = None      # declared business purpose of the workflow (purpose limitation)
 
 
 def synth_pii(rng):
@@ -68,8 +72,15 @@ def transform(op, text):
         return base64.b64encode(text.encode()).decode()
     if op == "retype":
         return text
+    if op == "paraphrase":     # agent re-expresses the data so that no pattern/signature survives
+        words = "zero one two three four five six seven eight nine".split()
+        out = text.replace("@", " at ").replace(".", " dot ").replace("+91", " plus nine one ")
+        return "".join(f" {words[int(c)]} " if c.isdigit() else c for c in out)
     if op == "chunk":
         return "|".join(text[i:i + 5] for i in range(0, len(text), 5))
+    if op in ("project_name", "project_email"):          # single-column extract of a customer record
+        parts = text.split(" | ")
+        return parts[0] if op == "project_name" else parts[1]
     if op == "aggregate":
         return "Aggregate: 128 customers, avg basket 1,842 INR, churn 4.1%"
     return text

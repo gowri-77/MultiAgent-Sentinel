@@ -110,6 +110,7 @@ class Testbed:
         self.slots, self.n, self.suspended = {}, 0, False
         self.isolated, self.skipped = set(), []
         self.leaked = False
+        self.ext_truth = set()
         guard.attach(self)
 
     def _new_item(self, labels, text, path, parents=(), truth=None):
@@ -143,6 +144,7 @@ class Testbed:
         ev = Event(self.n, {"read": "tool", "sink": "tool", "transform": "tool"}.get(kind, kind), a, st.get("dst"),
                    st.get("tool") or st.get("op"), tuple(used), None, sink, labels, path,
                    st["required"], st["collusive"], st["step"])
+        ev.purpose = st.get("purpose"); ev.meta = dict(st.get("meta", {}))
         if kind == "msg" and not used:
             path = (a,)
         if kind == "msg": ev.path = path + ((st["dst"],) if st["dst"] not in path else ())
@@ -169,14 +171,20 @@ class Testbed:
             src = self.items[used[0]]
             op = st["op"]
             labs = frozenset(l for l in src.labels if not (op == "aggregate" and l == "PII"))
-            if op == "retype": labs = frozenset()
-            iid = self._new_item(labs, transform(op, src.text), src.path + (a,) if a not in src.path else src.path, () if op == "retype" else (src.iid,),
-                                 truth=frozenset(l for l in src.truth if not (op == "aggregate" and l == "PII")))
+            if op in ("retype", "paraphrase"): labs = frozenset()
+            qid = {"project_name": "QID_NAME", "project_email": "QID_EMAIL"}.get(op)
+            if qid: labs = frozenset([qid])
+            iid = self._new_item(labs, transform(op, src.text), src.path + (a,) if a not in src.path else src.path, () if op in ("retype", "paraphrase") else (src.iid,),
+                                 truth=frozenset([qid]) if qid else frozenset(l for l in src.truth if not (op == "aggregate" and l == "PII")))
             ev.produces = iid; ev.labels = labs
             self.holds[a].add(iid); self.slots[st["out"]] = iid
         elif kind == "msg":
             if not used:
-                fresh = self._new_item((), st.get("text", "msg"), (a,)); self.holds[a].add(fresh); used = [fresh]; ev.uses = (fresh,)
+                # from_context: the agent re-expresses sensitive data it holds, with no declared provenance
+                ctx = next((self.items[i] for i in self.holds[a] if self.items[i].truth & set(SEVERITY)), None) if st.get("from_context") else None
+                fresh = self._new_item((), transform(st.get("op", "paraphrase"), ctx.text) if ctx else st.get("text", "msg"), (a,),
+                                       truth=ctx.truth if ctx else None)
+                self.holds[a].add(fresh); used = [fresh]; ev.uses = (fresh,)
             src = self.items[used[0]]
             iid = self._new_item(src.labels, src.text, ev.path, (src.iid,), truth=src.truth) if st.get("out") else src.iid
             ev.produces = iid
@@ -188,11 +196,17 @@ class Testbed:
             self.holds[a].add(used[0]); ev.produces = used[0]
             if st.get("out"): self.slots[st["out"]] = used[0]
         elif kind == "sink":
+            if st.get("harm"): self.leaked = True            # generic harm realised (non-data harms: fraud, defective release, price fixing)
             if sink == "external" and used and self.items[used[0]].truth & set(SEVERITY):
                 self.leaked = True
+            if sink == "external" and used:                    # composition leak: fragments that together re-identify
+                self.ext_truth |= self.items[used[0]].truth
+                if any(c <= self.ext_truth for c in TOXIC_COMBOS): self.leaked = True
             if st.get("out"):
                 iid = self._new_item(ev.labels, self.items[used[0]].text if used else "doc", ev.path, tuple(used), truth=self.items[used[0]].truth if used else frozenset())
                 ev.produces = iid; self.holds[a].add(iid); self.slots[st["out"]] = iid
+        obs = getattr(self.guard, "observe", None)       # post-effect hook (taint tracking in the guard)
+        if obs: obs(ev, self)
 
 def make_episode(kind, seed):
     rng = random.Random(seed)

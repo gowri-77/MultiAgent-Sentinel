@@ -7,9 +7,14 @@ def edge_key(ev):
 
 class Baseline:
     """Edge-frequency profile learnt from benign episodes (no attack data used)."""
-    def __init__(self): self.count = Counter(); self.episodes = 0
+    def __init__(self): self.count = Counter(); self.episodes = 0; self.prices = []
+    def price_stats(self):
+        import statistics as st
+        return (st.mean(self.prices), st.pstdev(self.prices)) if len(self.prices) >= 5 else None
     def learn(self, events):
-        for e in events: self.count[edge_key(e)] += 1
+        for e in events:
+            self.count[edge_key(e)] += 1
+            if e.tool == "set_price" and "value" in e.meta: self.prices.append(e.meta["value"])
         self.episodes += 1
     def novelty(self, ev):
         c = self.count.get(edge_key(ev), 0)
