@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multiagent Sentinel Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg-grid"></div>
+    <div class="orb orb-one"></div>
+    <div class="orb orb-two"></div>
+
+    <div class="shell">
+      <header class="topbar glass">
+        <div class="brand-wrap">
+          <div class="brand-mark">MS</div>
+          <div>
+            <p class="eyebrow">capstone prototype</p>
+            <h1>Multiagent Sentinel</h1>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <a href="#overview">Overview</a>
+          <a href="#defenses">Defenses</a>
+          <a href="#scenarios">Scenarios</a>
+        </nav>
+
+        <div class="header-actions">
+          <button class="ghost-btn" id="refreshBtn" type="button">Refresh</button>
+          <button class="primary-btn" id="runEvalBtn" type="button">Run evaluation</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="overview" class="hero glass">
+          <div class="hero-copy">
+            <p class="eyebrow accent">Multi-agent security monitor</p>
+            <h2>Detecting emergent collusion before data leaves the system.</h2>
+            <p class="subtext">
+              Evaluates scripted agents, lineage-sensitive flows, and trust-aware risk scoring to classify
+              malicious coordination from legitimate collaboration.
+            </p>
+            <div class="hero-actions">
+              <button class="primary-btn" id="runDemoBtn" type="button">Run demo</button>
+              <button class="ghost-btn" id="viewResultsBtn" type="button">View results</button>
+            </div>
+          </div>
+
+          <div class="hero-visual">
+            <div class="signal-panel panel">
+              <div class="panel-head">
+                <div>
+                  <span>Leak prevention by defense</span>
+                  <p class="chart-subtitle">Seen and unseen attack scenarios</p>
+                </div>
+                <span class="status-pill live" id="dataStatus">SYNCED</span>
+              </div>
+              <div id="defenseChart" class="defense-chart" aria-label="Leak prevention by defense"></div>
+              <div class="chart-legend">
+                <span><i class="legend-dot seen"></i>Seen attacks</span>
+                <span><i class="legend-dot unseen"></i>Unseen attacks</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="metric-grid" id="metricsGrid">
+          <article class="metric-card glass">
+            <p>Benign completion</p>
+            <h3 id="benignCompletion">--</h3>
+            <span class="metric-caption">Legitimate flows allowed</span>
+          </article>
+          <article class="metric-card glass">
+            <p>Seen leak prevented</p>
+            <h3 id="seenLeak">--</h3>
+            <span class="metric-caption">Known attack prevention</span>
+          </article>
+          <article class="metric-card glass">
+            <p>Unseen leak prevented</p>
+            <h3 id="unseenLeak">--</h3>
+            <span class="metric-caption">Novel attack mitigation</span>
+          </article>
+          <article class="metric-card glass accent-card">
+            <p>Attribution F1</p>
+            <h3 id="attrF1">--</h3>
+            <span class="metric-caption">Likely colluding agents</span>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <div class="panel glass" id="defenses">
+            <div class="panel-head">
+              <span>Defense comparison</span>
+              <span class="panel-tag">Risk posture</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Defense</th>
+                    <th>Seen</th>
+                    <th>Unseen</th>
+                    <th>False block</th>
+                  </tr>
+                </thead>
+                <tbody id="defenseTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel glass" id="scenarios">
+            <div class="panel-head">
+              <span>Scenario coverage</span>
+              <span class="panel-tag">Attack vectors</span>
+            </div>
+            <div id="scenarioList" class="scenario-list"></div>
+          </div>
+        </section>
+
+        <section class="panel glass log-panel">
+          <div class="panel-head">
+            <span>Execution log</span>
+            <span class="panel-tag">Console output</span>
+          </div>
+          <pre id="terminalOutput">Waiting for results...</pre>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
