@@ -15,6 +15,68 @@ UI_DIR = ROOT / "ui"
 EXECUTOR = ThreadPoolExecutor(max_workers=1)
 JOBS: dict[str, dict[str, Future]] = {}
 JOBS_LOCK = threading.Lock()
+EXPLAIN_SCENARIOS = {
+    "B3_internal_raw_pii": "Benign: raw PII shared internally",
+    "C1_relay2": "Attack: two-agent PII relay",
+    "C2_secret_escalation": "Attack: secret escalation",
+    "C3_chain_encoded": "Attack: encoded multi-agent relay",
+    "C4_memory_deadrop": "Attack: shared-memory dead drop",
+    "C5_lineage_break": "Stress test: retyped data loses lineage",
+}
+
+
+def build_explanation(scenario: str) -> dict:
+    if scenario not in EXPLAIN_SCENARIOS:
+        raise ValueError(f"Unknown explanation scenario: {scenario}")
+
+    from collusion_guard.evaluate import learn_baseline
+    from collusion_guard.guard import RiskGuard
+    from collusion_guard.testbed import Testbed, make_episode
+
+    steps, rng = make_episode(scenario, 123)
+    guard = RiskGuard(learn_baseline(11))
+    tb = Testbed(guard, rng).run(steps)
+    events = [{
+        "eid": event.eid,
+        "step": event.step,
+        "src": event.src,
+        "dst": event.dst,
+        "sink": event.sink,
+        "labels": sorted(event.labels),
+        "path": list(event.path),
+        "risk": event.risk,
+        "tier": event.tier,
+        "decision": event.decision,
+        "reason": event.reason,
+        "collusive": event.collusive,
+        "risk_parts": event.risk_parts,
+        "risk_factors": event.risk_factors,
+    } for event in tb.events]
+    explanations = [{
+        "eid": explanation["eid"],
+        "step": explanation["step"],
+        "risk": explanation["risk"],
+        "tier": explanation["tier"],
+        "culprits": sorted(explanation["culprits"]),
+        "text": explanation["text"],
+        "chain": [{
+            "eid": event.eid,
+            "step": event.step,
+            "src": event.src,
+            "dst": event.dst,
+            "sink": event.sink,
+            "labels": sorted(event.labels),
+        } for event in explanation["chain"]],
+    } for explanation in guard.explanations]
+    return {
+        "scenario": scenario,
+        "scenario_label": EXPLAIN_SCENARIOS[scenario],
+        "seed": 123,
+        "leaked": tb.leaked,
+        "suspended": tb.suspended,
+        "events": events,
+        "explanations": explanations,
+    }
 
 
 def run_project_command(cmd_name: str) -> dict:
@@ -111,7 +173,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path != "/api/run":
+        if parsed.path not in {"/api/run", "/api/explain"}:
             self._send_json({"success": False, "error": "Unsupported endpoint."}, 404)
             return
 
@@ -129,6 +191,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             self._send_json({"success": False, "error": "Invalid JSON body."}, 400)
+            return
+        if parsed.path == "/api/explain":
+            scenario = data.get("scenario") if isinstance(data, dict) else None
+            if not isinstance(scenario, str) or scenario not in EXPLAIN_SCENARIOS:
+                self._send_json({
+                    "error": f"Scenario must be one of: {', '.join(EXPLAIN_SCENARIOS)}."
+                }, 400)
+                return
+            self._send_json(build_explanation(scenario))
             return
         if not isinstance(data, dict) or data.get("command") not in {"demo", "evaluate"}:
             self._send_json({"success": False, "error": "Command must be 'demo' or 'evaluate'."}, 400)

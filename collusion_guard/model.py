@@ -47,6 +47,8 @@ class Event:
     tier: str = "Low"
     reason: str = ""
     scan_labels: frozenset = frozenset()
+    risk_parts: dict = field(default_factory=dict)
+    risk_factors: dict = field(default_factory=dict)
 
 
 def synth_pii(rng):
