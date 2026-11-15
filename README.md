@@ -1,4 +1,4 @@
-# CollusionGuard prototype (Capstone Phase-1, PW26_JR_06)
+# CollusionGuard prototype (Capstone Phase-1, PW26_JR_05)
 
 Detect -> Understand -> Decide -> Act for emergent collusion in multi-agent LLM systems.
 
